@@ -9,7 +9,7 @@ namespace ez {
 
 // Wrapper around lr_guarded for basic publishing of data.
 // Shared pointers to old versions of the data are kept in a list to ensure that they are
-// not deleted if released by the reader thread.
+// not deleted if released by a realtime reader thread.
 // garbage_collect() should be called periodically to delete old versions.
 template <typename T>
 struct data {
