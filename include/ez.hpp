@@ -1,8 +1,7 @@
 #pragma once
 
 #include <cassert>
-#include <cs_lr_guarded.h>
-#include <cs_plain_guarded.h>
+#include <deque>
 #include <optional>
 #include <vector>
 
@@ -11,17 +10,12 @@ namespace ez {
 template <typename T> struct immutable_value_ref;
 
 template <typename T>
-struct value_ptr {
-	value_ptr() = default;
-	auto reset() -> void                         { ptr_->reset(); }
-	auto set(T value) -> void                    { *ptr_ = std::move(value); }
-	[[nodiscard]] auto use_count() const -> long { return ptr_.use_count(); }
-	[[nodiscard]] static
-	auto make(T value) -> value_ptr<T> {
-		return value_ptr<T>{std::make_shared<std::optional<T>>(std::move(value))};
-	}
+struct version {
+	version() : ptr_{std::make_shared<std::optional<T>>()} {}
+	auto clear() -> void                          { ptr_->reset(); }
+	auto set(T value) -> void                     { *ptr_ = std::move(value); }
+	[[nodiscard]] auto is_garbage() const -> bool { return ptr_.use_count() <= 1; }
 private:
-	value_ptr(std::shared_ptr<std::optional<T>>&& ptr) : ptr_{std::move(ptr)} {}
 	std::shared_ptr<std::optional<T>> ptr_;
 	friend struct immutable_value_ref<T>;
 };
@@ -29,18 +23,17 @@ private:
 template <typename T>
 struct immutable_value_ref {
 	immutable_value_ref() = default;
-	immutable_value_ref(value_ptr<T> ptr) : ptr_{std::move(ptr.ptr_)} {}
+	immutable_value_ref(version<T> ptr) : ptr_{std::move(ptr.ptr_)} {}
 	const T* operator->() const { return &ptr_->value(); }
 	const T& operator*() const  { return ptr_->value(); }
 private:
 	std::shared_ptr<const std::optional<T>> ptr_;
 };
 
-// Wrapper around lr_guarded for basic publishing of a value.
 // Shared pointers to old versions of the value are kept in a list to ensure that they are
 // not reclaimed if released by a realtime reader thread.
-// The memory allocated for different versions of the data is reused as much as possible
-// to avoid unnecessary allocations.
+// The memory allocated for different versions of the data is reused to avoid unnecessary
+// allocations.
 // garbage_collect() should be called periodically to reclaim old versions. You could do
 // this every time you modify the value if you want, and that would work fine. Garbage
 // collection is unlikely to be expensive. Or you could have a background thread that
@@ -52,54 +45,59 @@ template <typename T>
 struct value {
 	template <typename UpdateFn>
 	auto modify(UpdateFn&& update_fn) -> void {
-		modify({writer_mutex_}, std::forward<UpdateFn>(update_fn));
+		auto lock = std::lock_guard{writer_mutex_};
+		auto new_value = update_fn(std::move(writer_value_));
+		writer_value_ = new_value;
+		const auto index = get_empty_version();
+		current_version_ = versions_[index];
+		versions_[index].set(std::move(new_value));
+		dead_flags_[index] = false;
+		current_version_ptr_.store(&versions_[index], std::memory_order_release);
 	}
 	auto set(T value) -> void {
-		auto lock = std::unique_lock(writer_mutex_);
-		auto modify_fn = [value = std::move(value)](T&&) mutable { return std::move(value); };
-		modify(std::move(lock), modify_fn);
+		modify([value = std::move(value)](T&&) mutable { return std::move(value); });
 	}
 	// This is a lock-free operation which will get you the most recently published value.
 	auto read() const -> immutable_value_ref<T> {
-		return *ptr_.lock_shared().get();
+		auto version = *current_version_ptr_.load(std::memory_order_acquire);
+		return immutable_value_ref<T>{version};
 	}
 	auto garbage_collect() -> void {
-		auto lock = std::unique_lock(writer_mutex_);
-		auto is_garbage = [](const value_ptr<T>& ptr) { return ptr.use_count() == 1; };
-		auto garbage_beg = std::remove_if(versions_.begin(), versions_.end(), is_garbage);
-		auto garbage_end = versions_.end();
-		for (auto it = garbage_beg; it != garbage_end; ++it) { move_to_pool(std::move(*it)); }
-		versions_.erase(garbage_beg, garbage_end);
+		auto lock = std::lock_guard{writer_mutex_};
+		get_alive_versions(&index_buffer_);
+		for (auto index : index_buffer_) {
+			auto& version = versions_[index];
+			if (version.is_garbage()) {
+				version.clear();
+				dead_flags_[index] = true;
+			}
+		}
 	}
 private:
-	template <typename UpdateFn>
-	auto modify(std::unique_lock<std::mutex>&& lock, UpdateFn&& update_fn) -> void {
-		auto copy = make_copy(writer_value_ = update_fn(std::move(writer_value_)));
-		ptr_.modify([copy](value_ptr<T>& ptr) { ptr = copy; });
-		versions_.push_back(std::move(copy));
-	}
-	auto make_copy(T value) -> value_ptr<T> {
-		if (pool_.empty()) {
-			return value_ptr<T>::make(std::move(value));
+	auto get_alive_versions(std::vector<size_t>* out) -> void {
+		out->clear();
+		for (size_t i = 0; i < dead_flags_.size(); i++) {
+			if (!dead_flags_[i]) { out->push_back(i); }
 		}
-		auto vptr = pop_from_pool();
-		vptr.set(std::move(value));
-		return vptr;
 	}
-	auto move_to_pool(value_ptr<T>&& vptr) -> void {
-		vptr.reset();
-		pool_.push_back(std::move(vptr));
-	}
-	auto pop_from_pool() -> value_ptr<T> {
-		auto vptr = std::move(pool_.back());
-		pool_.pop_back();
-		return vptr;
+	[[nodiscard]]
+	auto get_empty_version() -> size_t {
+		for (size_t i = 0; i < dead_flags_.size(); i++) {
+			if (dead_flags_[i]) { return i; }
+		}
+		auto index = size_t{versions_.size()};
+		versions_.emplace_back();
+		dead_flags_.push_back(true);
+		assert ((index + 1) == versions_.size() == dead_flags_.size());
+		return index;
 	}
 	T writer_value_;
 	std::mutex writer_mutex_;
-	libguarded::lr_guarded<value_ptr<T>> ptr_;
-	std::vector<value_ptr<T>> versions_;
-	std::vector<value_ptr<T>> pool_;
+	std::atomic<version<T>*> current_version_ptr_ = nullptr;
+	version<T> current_version_;
+	std::deque<version<T>> versions_;
+	std::vector<bool> dead_flags_;
+	std::vector<size_t> index_buffer_;
 };
 
 template <typename T>
