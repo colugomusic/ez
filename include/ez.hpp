@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <deque>
+#include <memory>
 #include <optional>
 #include <vector>
 
