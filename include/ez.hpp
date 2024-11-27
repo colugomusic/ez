@@ -63,12 +63,11 @@ private:
 // not reclaimed if released by a realtime reader thread.
 // The memory allocated for different versions of the data is reused to avoid unnecessary
 // (de)allocations.
-// garbage_collect() should be called periodically to reclaim old versions. You could do
-// this every time you modify the value if you want, and that would work fine. Garbage
+// garbage_collect() should be called periodically to reclaim memory. You could do this
+// every time you modify the value if you want, and that would work fine. Garbage
 // collection is unlikely to be expensive. Or you could have a background thread that
 // calls it on a timer or whatever.
-// Note that if you don't call garbage_collect() then destructors won't be run for those
-// old values.
+// Note that if you don't call garbage_collect() then destructors won't be run for old Ts.
 // Every public function here is thread-safe.
 // Only read() is lock-free.
 template <typename T>
@@ -152,14 +151,12 @@ struct sync {
 	}
 	[[nodiscard]] auto read(ez::rt_t) -> immutable<T> {
 		auto value = published_value_.read(ez::rt);
-		unread_value_.exchange(false);
+		unread_value_.store(false, std::memory_order_release);
 		return value;
 	}
-	// Check if the latest published value has been observed at least once.
-	[[nodiscard]] auto is_unread(ez::nort_t) const -> bool { return is_unread(); }
-	[[nodiscard]] auto is_unread(ez::rt_t) const -> bool   { return is_unread(); }
+	// Check if the latest published value has been observed by a realtime reader at least once.
+	[[nodiscard]] auto is_unread(ez::rt_t) const -> bool { return unread_value_.load(std::memory_order_acquire); }
 private:
-	[[nodiscard]] auto is_unread() const -> bool { return unread_value_.load(std::memory_order_acquire); }
 	mutable std::mutex mutex_;
 	T working_value_;
 	ez::value<T> published_value_;
