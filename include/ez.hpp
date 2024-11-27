@@ -7,7 +7,7 @@
 
 namespace ez {
 
-template <typename T> struct immutable_value_ref;
+template <typename T> struct immutable;
 
 template <typename T>
 struct version {
@@ -17,13 +17,13 @@ struct version {
 	[[nodiscard]] auto is_garbage() const -> bool { return ptr_.use_count() <= 1; }
 private:
 	std::shared_ptr<std::optional<T>> ptr_;
-	friend struct immutable_value_ref<T>;
+	friend struct immutable<T>;
 };
 
 template <typename T>
-struct immutable_value_ref {
-	immutable_value_ref() = default;
-	immutable_value_ref(version<T> ptr) : ptr_{std::move(ptr.ptr_)} {}
+struct immutable {
+	immutable() = default;
+	immutable(version<T> ptr) : ptr_{std::move(ptr.ptr_)} {}
 	const T* operator->() const { return &ptr_->value(); }
 	const T& operator*() const  { return ptr_->value(); }
 private:
@@ -58,9 +58,9 @@ struct value {
 		modify([value = std::move(value)](T&&) mutable { return std::move(value); });
 	}
 	// This is a lock-free operation which will get you the most recently published value.
-	auto read() const -> immutable_value_ref<T> {
+	auto read() const -> immutable<T> {
 		auto version = *current_version_ptr_.load(std::memory_order_acquire);
-		return immutable_value_ref<T>{version};
+		return immutable<T>{version};
 	}
 	auto garbage_collect() -> void {
 		auto lock = std::lock_guard{writer_mutex_};
@@ -88,12 +88,14 @@ private:
 		auto index = size_t{versions_.size()};
 		versions_.emplace_back();
 		dead_flags_.push_back(true);
-		assert ((index + 1) == versions_.size() == dead_flags_.size());
+		assert ((index + 1) == versions_.size() && (index + 1) == dead_flags_.size());
 		return index;
 	}
 	T writer_value_;
 	std::mutex writer_mutex_;
 	std::atomic<version<T>*> current_version_ptr_ = nullptr;
+	// We hold this just to keep the refcount > 1 so that the current
+	// version is not considered garbage.
 	version<T> current_version_;
 	std::deque<version<T>> versions_;
 	std::vector<bool> dead_flags_;
@@ -113,7 +115,7 @@ struct sync {
 		published_value_.set(working_value_);
 		unread_value_.store(true, std::memory_order_release);
 	}
-	[[nodiscard]] auto rt_read() -> immutable_value_ref<T> {
+	[[nodiscard]] auto rt_read() -> immutable<T> {
 		auto value = published_value_.read();
 		unread_value_.exchange(false);
 		return value;
@@ -140,7 +142,7 @@ private:
 template <typename T>
 struct signalled_sync : sync<T> {
 	signalled_sync(const sync_signal& signal) : signal_{&signal} {}
-	auto rt_read() -> immutable_value_ref<T>& {
+	auto rt_read() -> immutable<T>& {
 		dbg_check_single_thread();
 		auto signal_value = signal_->get();
 		if (signal_value > local_signal_value_) {
@@ -159,7 +161,7 @@ private:
 	}
 	const sync_signal* signal_;
 	uint64_t local_signal_value_ = 0;
-	immutable_value_ref<T> signalled_value_;
+	immutable<T> signalled_value_;
 };
 
 template <typename T, size_t N>
@@ -171,7 +173,7 @@ struct signalled_sync_array {
 	auto set_publish(T value) -> void            { ss_.set_publish(std::move(value)); }
 private:
 	ez::signalled_sync<T> ss_;
-	std::array<immutable_value_ref<T>, N> array_;
+	std::array<immutable<T>, N> array_;
 };
 
 struct trigger {
