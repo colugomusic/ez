@@ -2,7 +2,7 @@
 
 #include <atomic>
 
-namespace ez::extra {
+namespace ez {
 
 struct trigger {
 	trigger()                 { flag_.clear(); flag_.test_and_set(std::memory_order_relaxed); }
@@ -81,4 +81,4 @@ private:
 	bool have_ball_{};
 };
 
-} // ez::extra
+} // ez
