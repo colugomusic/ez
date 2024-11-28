@@ -12,8 +12,8 @@ namespace ez {
 // to type ez::rt or ez::nort to reduce the chance of accidentally calling a
 // non-realtime-safe function from a realtime thread.
 
-struct nort_t {};  // Indicates that the calling thread is not a realtime thread.
-struct rt_t {};    // Indicates that the calling thread is a realtime thread.
+struct nort_t {}; // Indicates that the calling thread is not a realtime thread.
+struct rt_t {};   // Indicates that the calling thread is a realtime thread.
 
 static constexpr auto nort = nort_t{};
 static constexpr auto rt   = rt_t{};
@@ -51,12 +51,12 @@ private:
 template <typename T>
 struct immutable {
 	immutable() = default;
-	immutable(version<T> ptr) : ptr_{std::move(ptr.ptr_)} {}
+	immutable(version<T> v) : ptr_{std::move(v.ptr_)} {}
 	const T* operator->() const { return &ptr_->value(); }
 	const T& operator*() const  { return ptr_->value(); }
 private:
-	// The underlying optional accessible though this
-	// interface is guaranteed to always hold a value.
+	// The underlying optional accessible though this interface
+	// is logically guaranteed to always hold a value.
 	std::shared_ptr<const std::optional<T>> ptr_;
 };
 
@@ -64,18 +64,19 @@ private:
 // not reclaimed if released by a realtime reader thread.
 // The memory allocated for different versions of the data is reused to avoid unnecessary
 // (de)allocations.
-// garbage_collect() should be called periodically to reclaim memory. You could do this
-// every time you modify the value if you want, and that would work fine. Garbage
-// collection is unlikely to be expensive. Or you could have a background thread that
-// calls it on a timer or whatever.
-// Note that if you don't call garbage_collect() then destructors won't be run for old Ts.
+// garbage_collect() should be called periodically to reclaim memory. You could do this every
+// time you modify the value if you want, and that would work fine. If the template
+// parameter 'auto_gc' is set to true then that will happen automatically.
+// Or you could have a background thread that calls garbage_collect() on a timer or whatever.
+// The garbage collection operation is relatively inexpensive.
+// Note that if garbage collection isn't run then destructors won't be run for old Ts.
 // Every public function here is thread-safe.
 // Only read() is lock-free.
-template <typename T>
+template <typename T, bool auto_gc = false>
 struct value {
 	template <typename UpdateFn>
 	auto modify(ez::nort_t, UpdateFn&& update_fn) -> void {
-		auto lock = std::lock_guard{writer_mutex_};
+		auto lock = std::unique_lock{writer_mutex_};
 		auto new_value = update_fn(std::move(writer_value_));
 		writer_value_ = new_value;
 		const auto index = get_empty_version();
@@ -83,6 +84,7 @@ struct value {
 		versions_[index].set(std::move(new_value));
 		dead_flags_[index] = false;
 		current_version_ptr_.store(&versions_[index], std::memory_order_release);
+		if constexpr (auto_gc) { garbage_collect(lock); }
 	}
 	auto set(ez::nort_t, T value) -> void {
 		modify(ez::nort, [value = std::move(value)](T&&) mutable { return std::move(value); });
@@ -94,28 +96,31 @@ struct value {
 		return read();
 	}
 	auto garbage_collect(ez::nort_t) -> void {
-		auto lock = std::lock_guard{writer_mutex_};
-		get_alive_versions(&index_buffer_);
-		for (auto index : index_buffer_) {
-			auto& version = versions_[index];
-			if (version.is_garbage()) {
-				version.clear();
-				dead_flags_[index] = true;
+		garbage_collect(std::unique_lock{writer_mutex_});
+	}
+private:
+	auto garbage_collect(std::unique_lock<std::mutex>&& lock) -> void {
+		for (auto index : get_alive_versions(&index_buffer_)) {
+			if (versions_[index].is_garbage()) {
+				kill(index);
 			}
 		}
 	}
-private:
+	auto kill(size_t index) -> void {
+		versions_[index].clear();
+		dead_flags_[index] = true;
+	}
 	auto read() const -> immutable<T> {
 		auto version = *current_version_ptr_.load(std::memory_order_acquire);
 		return immutable<T>{version};
 	}
-	auto get_alive_versions(std::vector<size_t>* out) -> void {
+	auto get_alive_versions(std::vector<size_t>* out) const -> const std::vector<size_t>& {
 		out->clear();
 		for (size_t i = 0; i < dead_flags_.size(); i++) {
 			if (!dead_flags_[i]) { out->push_back(i); }
 		}
+		return *out;
 	}
-	[[nodiscard]]
 	auto get_empty_version() -> size_t {
 		for (size_t i = 0; i < dead_flags_.size(); i++) {
 			if (dead_flags_[i]) { return i; }
@@ -137,7 +142,10 @@ private:
 	std::vector<size_t> index_buffer_;
 };
 
-template <typename T>
+// An 'update' or 'set' operation changes the working value, but does not yet
+// commit the change to be visible to realtime readers.
+// A 'publish' operation makes the new value visible to realtime readers.
+template <typename T, bool auto_gc = false>
 struct sync {
 	sync()                                                                { publish(ez::nort); }
 	auto gc(ez::nort_t) -> void                                           { published_value_.garbage_collect(ez::nort); }
@@ -160,43 +168,73 @@ struct sync {
 private:
 	mutable std::mutex mutex_;
 	T working_value_;
-	ez::value<T> published_value_;
+	ez::value<T, auto_gc> published_value_;
 	std::atomic_bool unread_value_ = true;
 };
 
 struct sync_signal {
-	[[nodiscard]] auto get(ez::rt_t) const -> uint64_t { return value_.load(); }
-	auto increment(ez::rt_t) -> void                   { value_.fetch_add(1); }
+	auto get(ez::rt_t) const -> uint64_t { return value_; }
+	auto increment(ez::rt_t) -> void     { value_++; }
 private:
-	std::atomic<uint64_t> value_ = 1;
+	uint64_t value_ = 1;
 };
 
-template <typename T>
-struct signalled_sync : sync<T> {
+// Holds the most recently fetched version of the most recently published
+// version of a value.
+// The published value is only fetched when the associated sync_signal is
+// incremented.
+// The motivation for this is an audio callback, e.g.
+/* ----------------------------------------------------------------------
+static ez::sync_signal sync_signal;
+static ez::signalled_sync<Value> sync{sync_signal};
+
+void audio_callback(...) {
+	
+	// The signal is incremented once at the beginning of each audio
+	// iteration. This ensures that read() will always return the same
+	// value until the next iteration.
+	sync_signal.increment();
+	
+	// Retrieve the most recently fetched value.
+	auto value1 = sync.read(ez::audio);
+	
+	...
+	
+	// The UI thread might publish a new version of the value at this
+	// point.
+	
+	...
+	
+	// Retrieve the value again.
+	auto value2 = sync.read(ez::audio);
+	
+	// Guaranteed to pass, because the signal is still at the same value.
+	assert(value1 == value2);
+	
+}
+---------------------------------------------------------------------- */
+template <typename T, bool auto_gc = false>
+struct signalled_sync : sync<T, auto_gc> {
 	signalled_sync(const sync_signal& signal) : signal_{&signal} {}
+	// CAUTION:
+	// This assumes that there is exactly one simultaneous realtime reader.
+	// If you want to support multiple realtime readers you'll have to fork
+	// and complicate this class.
 	auto read(ez::rt_t) -> immutable<T>& {
-		dbg_check_single_thread();
 		auto signal_value = signal_->get(ez::rt);
 		if (signal_value > local_signal_value_) {
 			local_signal_value_ = signal_value;
-			signalled_value_    = sync<T>::read(ez::rt);
+			signalled_value_    = sync<T, auto_gc>::read(ez::rt);
 		}
 		return signalled_value_;
 	}
 private:
-	auto dbg_check_single_thread() -> void {
-#	if _DEBUG
-		static std::thread::id thread_id{};
-		if (thread_id == std::thread::id{}) { thread_id = std::this_thread::get_id(); }
-		else                                { assert(thread_id == std::this_thread::get_id() && "signal_sync only supports a single realtime reader thread."); }
-#	endif
-	}
 	const sync_signal* signal_;
 	uint64_t local_signal_value_ = 0;
 	immutable<T> signalled_value_;
 };
 
-template <typename T, size_t N>
+template <typename T, size_t N, bool auto_gc = false>
 struct signalled_sync_array {
 	signalled_sync_array(const sync_signal& signal) : ss_{signal} {}
 	auto gc(ez::nort_t) -> void                            { ss_.gc(ez::nort); }
@@ -205,7 +243,7 @@ struct signalled_sync_array {
 	[[nodiscard]] auto is_unread(ez::rt_t) const -> bool   { return ss_.is_unread(ez::rt); }
 	auto set_publish(ez::nort_t, T value) -> void          { ss_.set_publish(ez::nort, std::move(value)); }
 private:
-	ez::signalled_sync<T> ss_;
+	ez::signalled_sync<T, auto_gc> ss_;
 	std::array<immutable<T>, N> array_;
 };
 
