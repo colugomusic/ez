@@ -64,14 +64,16 @@ private:
 // not reclaimed if released by a realtime reader thread.
 // The memory allocated for different versions of the data is reused to avoid unnecessary
 // (de)allocations.
-// garbage_collect() should be called periodically to reclaim memory. You could do this every
-// time you modify the value if you want, and that would work fine. If the template
-// parameter 'auto_gc' is set to true then that will happen automatically.
+// If the template parameter 'auto_gc' is set to false then garbage_collect() should be called
+// periodically to reclaim memory. You could do this every time you modify the value if
+// you want, which is what 'auto_gc' would do.
 // Or you could have a background thread that calls garbage_collect() on a timer or whatever.
 // The garbage collection operation is relatively inexpensive.
-// Note that if garbage collection isn't run then destructors won't be run for old Ts.
+// Note that if T has a destructor then it won't be run until it is reclaimed by the garbage
+// collection routine.
 // Every public function here is thread-safe.
 // Only read() is lock-free.
+// Multiple simultaneous realtime readers are supported.
 template <typename T, bool auto_gc = false>
 struct value {
 	template <typename UpdateFn>
@@ -145,10 +147,13 @@ private:
 // An 'update' or 'set' operation changes the working value, but does not yet
 // commit the change to be visible to realtime readers.
 // A 'publish' operation makes the new value visible to realtime readers.
+// If you never call 'is_unread' then this class supports multiple simultaneous
+// realtime readers. Calling 'is_unread' assumes only one realtime reader.
 template <typename T, bool auto_gc = false>
 struct sync {
 	sync()                                                                { publish(ez::nort); }
 	auto gc(ez::nort_t) -> void                                           { published_value_.garbage_collect(ez::nort); }
+	[[nodiscard]] auto is_unread(ez::rt_t) const -> bool                  { return unread_value_.load(std::memory_order_acquire); }
 	[[nodiscard]] auto read(ez::nort_t) const -> T                        { auto lock = std::lock_guard{mutex_}; return working_value_; }
 	template <typename Fn> auto update(ez::nort_t, Fn fn) -> void         { auto lock = std::lock_guard{mutex_}; working_value_ = fn(std::move(working_value_)); }
 	template <typename Fn> auto update_publish(ez::nort_t, Fn fn) -> void { update(ez::nort, fn); publish(ez::nort); }
@@ -159,12 +164,9 @@ struct sync {
 		unread_value_.store(true, std::memory_order_release);
 	}
 	[[nodiscard]] auto read(ez::rt_t) -> immutable<T> {
-		auto value = published_value_.read(ez::rt);
-		unread_value_.store(false, std::memory_order_release);
-		return value;
+		unread_value_.store(false, std::memory_order_acquire);
+		return published_value_.read(ez::rt);
 	}
-	// Check if the latest published value has been observed by a realtime reader at least once.
-	[[nodiscard]] auto is_unread(ez::rt_t) const -> bool { return unread_value_.load(std::memory_order_acquire); }
 private:
 	mutable std::mutex mutex_;
 	T working_value_;
@@ -219,7 +221,7 @@ struct signalled_sync : sync<T, auto_gc> {
 	// CAUTION:
 	// This assumes that there is exactly one simultaneous realtime reader.
 	// If you want to support multiple realtime readers you'll have to fork
-	// and complicate this class.
+	// and complicate this class, you smarty pants.
 	auto read(ez::rt_t) -> immutable<T>& {
 		auto signal_value = signal_->get(ez::rt);
 		if (signal_value > local_signal_value_) {
@@ -234,6 +236,13 @@ private:
 	immutable<T> signalled_value_;
 };
 
+// This is like signalled_sync, except instead of holding only the most
+// recently fetched published value, it can hold multiple versions of the
+// published value.
+// The motivation for this is an audio application which, whenever anything
+// changes, crossfades-out the old project state while crossfading-in the
+// new project state. This can be set up with N==2 and ping-ponging between
+// the two value slots.
 template <typename T, size_t N, bool auto_gc = false>
 struct signalled_sync_array {
 	signalled_sync_array(const sync_signal& signal) : ss_{signal} {}
