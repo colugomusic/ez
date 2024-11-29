@@ -164,7 +164,7 @@ struct sync {
 		unread_value_.store(true, std::memory_order_release);
 	}
 	[[nodiscard]] auto read(ez::rt_t) -> immutable<T> {
-		unread_value_.store(false, std::memory_order_acquire);
+		unread_value_.store(false, std::memory_order_release);
 		return published_value_.read(ez::rt);
 	}
 private:
