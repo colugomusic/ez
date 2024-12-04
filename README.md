@@ -30,3 +30,5 @@ void gc_thread() {
   value_.gc(ez::nort);
 }
 ```
+
+For a fairly extensive usage example you could look at [this project](https://github.com/search?q=repo%3Acolugomusic%2Fscuff+ez%3A%3A&type=code).
