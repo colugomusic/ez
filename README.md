@@ -4,7 +4,9 @@ Realtime-safe thread synchronization.
 
 ## Usage
 
-There are many ways to use this library so I will document them properly one day. Here is a very basic example:
+There are many ways to use this library so I will document them properly one day. There is some documentation [in the header](include/ez.hpp).
+
+Here is a very basic example:
 
 ```c++
 struct Value {
