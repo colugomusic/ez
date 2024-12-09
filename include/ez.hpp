@@ -15,10 +15,27 @@ namespace ez {
 struct nort_t {}; // Indicates that the calling thread is not a realtime thread.
 struct rt_t {};   // Indicates that the calling thread is a realtime thread.
 
+// Used to indicate that a function is completely thread-safe and realtime-safe.
+struct safe_t {
+	safe_t() = default;
+	safe_t(nort_t){}
+	safe_t(rt_t){}
+};
+
+// Not for client use.
+struct published_t {
+	published_t(rt_t) {}
+	published_t(safe_t) {}
+};
+
 static constexpr auto nort = nort_t{};
 static constexpr auto rt   = rt_t{};
+static constexpr auto safe = safe_t{};
 
 // Just some aliases.
+using audio_t = rt_t;
+using main_t  = nort_t;
+using ui_t    = nort_t;
 static constexpr auto audio = rt;
 static constexpr auto main  = nort;
 static constexpr auto ui    = nort;
@@ -91,11 +108,9 @@ struct value {
 	auto set(ez::nort_t, T value) -> void {
 		modify(ez::nort, [value = std::move(value)](T&&) mutable { return std::move(value); });
 	}
-	auto read(ez::nort_t) const -> immutable<T> {
-		return read();
-	}
-	auto read(ez::rt_t) const -> immutable<T> {
-		return read();
+	auto read(ez::safe_t) const -> immutable<T> {
+		auto version = *current_version_ptr_.load(std::memory_order_acquire);
+		return immutable<T>{version};
 	}
 	auto garbage_collect(ez::nort_t) -> void {
 		garbage_collect(std::unique_lock{writer_mutex_});
@@ -111,10 +126,6 @@ private:
 	auto kill(size_t index) -> void {
 		versions_[index].clear();
 		dead_flags_[index] = true;
-	}
-	auto read() const -> immutable<T> {
-		auto version = *current_version_ptr_.load(std::memory_order_acquire);
-		return immutable<T>{version};
 	}
 	auto get_alive_versions(std::vector<size_t>* out) const -> const std::vector<size_t>& {
 		out->clear();
@@ -151,21 +162,21 @@ private:
 // realtime readers. Calling 'is_unread' assumes only one realtime reader.
 template <typename T, bool auto_gc = false>
 struct sync {
-	sync()                                                                { publish(ez::nort); }
-	auto gc(ez::nort_t) -> void                                           { published_value_.garbage_collect(ez::nort); }
-	[[nodiscard]] auto is_unread(ez::rt_t) const -> bool                  { return unread_value_.load(std::memory_order_acquire); }
-	[[nodiscard]] auto read(ez::nort_t) const -> T                        { auto lock = std::lock_guard{mutex_}; return working_value_; }
-	template <typename Fn> auto update(ez::nort_t, Fn fn) -> void         { auto lock = std::lock_guard{mutex_}; working_value_ = fn(std::move(working_value_)); }
-	template <typename Fn> auto update_publish(ez::nort_t, Fn fn) -> void { update(ez::nort, fn); publish(ez::nort); }
-	auto set(ez::nort_t, T value) -> void                                 { auto lock = std::lock_guard{mutex_}; working_value_ = std::move(value); }
-	auto set_publish(ez::nort_t, T value) -> void                         { set(ez::nort, std::move(value)); publish(ez::nort); }
+	sync()                                                             { publish(ez::nort); }
+	auto gc(ez::nort_t) -> void                                        { published_value_.garbage_collect(ez::nort); }
+	[[nodiscard]] auto is_unread(ez::safe_t) const -> bool             { return unread_value_.load(std::memory_order_acquire); }
+	[[nodiscard]] auto read(ez::nort_t) const -> T                     { auto lock = std::lock_guard{mutex_}; return working_value_; }
+	template <typename Fn> auto update(ez::nort_t, Fn fn) -> T         { auto lock = std::lock_guard{mutex_}; working_value_ = fn(std::move(working_value_)); return working_value_; }
+	template <typename Fn> auto update_publish(ez::nort_t, Fn fn) -> T { auto value = update(ez::nort, fn); publish(ez::nort); return value; }
+	auto set(ez::nort_t, T value) -> void                              { auto lock = std::lock_guard{mutex_}; working_value_ = std::move(value); }
+	auto set_publish(ez::nort_t, T value) -> void                      { set(ez::nort, std::move(value)); publish(ez::nort); }
 	auto publish(ez::nort_t) -> void {
 		published_value_.set(ez::nort, working_value_);
 		unread_value_.store(true, std::memory_order_release);
 	}
-	[[nodiscard]] auto read(ez::rt_t) -> immutable<T> {
+	[[nodiscard]] auto read(ez::published_t) -> immutable<T> {
 		unread_value_.store(false, std::memory_order_release);
-		return published_value_.read(ez::rt);
+		return published_value_.read(ez::safe);
 	}
 private:
 	mutable std::mutex mutex_;
