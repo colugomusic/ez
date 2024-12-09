@@ -40,6 +40,16 @@ static constexpr auto ui    = nort;
 // from a realtime thread or not. If they do that then I don't guarantee that
 // anything will work the way they expect.
 
+namespace detail {
+
+// Not for public use.
+struct published_t {
+	published_t(rt_t) {}
+	published_t(safe_t) {}
+};
+
+} // detail
+
 template <typename T> struct immutable;
 
 // The reason for storing shared_ptr<optional<T>>s instead of simply
@@ -108,7 +118,7 @@ struct value {
 		auto version = *current_version_ptr_.load(std::memory_order_acquire);
 		return immutable<T>{version};
 	}
-	auto garbage_collect(ez::nort_t) -> void {
+	auto garbage_collect(ez::gc_t) -> void {
 		garbage_collect(std::unique_lock{writer_mutex_});
 	}
 private:
@@ -158,31 +168,19 @@ private:
 // realtime readers. Calling 'is_unread' assumes only one realtime reader.
 template <typename T, bool auto_gc = false>
 struct sync {
-	struct published_t {
-		published_t(rt_t) {}
-		published_t(safe_t) {}
-	};
 	sync()                                                             { publish(ez::nort); }
-	auto gc(ez::gc_t) -> void                                          { published_value_.garbage_collect(ez::gc); }
-	[[nodiscard]] auto is_unread(ez::safe_t) const -> bool             { return unread_value_.load(std::memory_order_acquire); }
 	[[nodiscard]] auto read(ez::nort_t) const -> T                     { auto lock = std::lock_guard{mutex_}; return working_value_; }
-	template <typename Fn> auto update(ez::nort_t, Fn fn) -> T         { auto lock = std::lock_guard{mutex_}; working_value_ = fn(std::move(working_value_)); return working_value_; }
-	template <typename Fn> auto update_publish(ez::nort_t, Fn fn) -> T { auto value = update(ez::nort, fn); publish(ez::nort); return value; }
+	[[nodiscard]] auto read(detail::published_t) -> immutable<T>       { return published_value_.read(ez::safe); }
+	auto gc(ez::gc_t) -> void                                          { published_value_.garbage_collect(ez::gc); }
+	auto publish(ez::nort_t) -> void                                   { published_value_.set(ez::nort, working_value_); }
 	auto set(ez::nort_t, T value) -> void                              { auto lock = std::lock_guard{mutex_}; working_value_ = std::move(value); }
 	auto set_publish(ez::nort_t, T value) -> void                      { set(ez::nort, std::move(value)); publish(ez::nort); }
-	auto publish(ez::nort_t) -> void {
-		published_value_.set(ez::nort, working_value_);
-		unread_value_.store(true, std::memory_order_release);
-	}
-	[[nodiscard]] auto read(published_t) -> immutable<T> {
-		unread_value_.store(false, std::memory_order_release);
-		return published_value_.read(ez::safe);
-	}
+	template <typename Fn> auto update(ez::nort_t, Fn fn) -> T         { auto lock = std::lock_guard{mutex_}; working_value_ = fn(std::move(working_value_)); return working_value_; }
+	template <typename Fn> auto update_publish(ez::nort_t, Fn fn) -> T { auto value = update(ez::nort, fn); publish(ez::nort); return value; }
 private:
 	mutable std::mutex mutex_;
 	T working_value_;
 	ez::value<T, auto_gc> published_value_;
-	std::atomic_bool unread_value_ = true;
 };
 
 struct sync_signal {
@@ -226,13 +224,14 @@ void audio_callback(...) {
 	
 }
 ---------------------------------------------------------------------- */
+// CAUTION:
+// This class assumes that there is exactly one simultaneous realtime
+// reader.
+// If you want to support multiple realtime readers you'll have to fork
+// and complicate this class, you smarty pants.
 template <typename T, bool auto_gc = false>
 struct signalled_sync : sync<T, auto_gc> {
 	signalled_sync(const sync_signal& signal) : signal_{&signal} {}
-	// CAUTION:
-	// This assumes that there is exactly one simultaneous realtime reader.
-	// If you want to support multiple realtime readers you'll have to fork
-	// and complicate this class, you smarty pants.
 	auto read(ez::rt_t) -> immutable<T>& {
 		auto signal_value = signal_->get(ez::rt);
 		if (signal_value > local_signal_value_) {
@@ -241,10 +240,24 @@ struct signalled_sync : sync<T, auto_gc> {
 		}
 		return signalled_value_;
 	}
+	auto publish(ez::nort_t) -> void {
+		sync<T, auto_gc>::publish(ez::nort);
+		unread_value_.store(true, std::memory_order_release);
+	}
+	[[nodiscard]]
+	auto read(detail::published_t anno) -> immutable<T> {
+		unread_value_.store(false, std::memory_order_release);
+		return sync<T, auto_gc>::read(anno);
+	}
+	[[nodiscard]]
+	auto is_unread(ez::safe_t) const -> bool {
+		return unread_value_.load(std::memory_order_acquire);
+	}
 private:
 	const sync_signal* signal_;
 	uint64_t local_signal_value_ = 0;
 	immutable<T> signalled_value_;
+	std::atomic_bool unread_value_ = true;
 };
 
 // This is like signalled_sync, except instead of holding only the most
@@ -257,10 +270,9 @@ private:
 template <typename T, size_t N, bool auto_gc = false>
 struct signalled_sync_array {
 	signalled_sync_array(const sync_signal& signal) : ss_{signal} {}
+	[[nodiscard]] auto is_unread(ez::safe_t) const -> bool { return ss_.is_unread(ez::safe); }
 	auto gc(ez::gc_t) -> void                              { ss_.gc(ez::gc); }
 	auto read_into(ez::rt_t, size_t slot) -> const T&      { assert (slot >= 0 && slot < N); return *(array_[slot] = ss_.read(ez::rt)); }
-	[[nodiscard]] auto is_unread(ez::nort_t) const -> bool { return ss_.is_unread(ez::nort); }
-	[[nodiscard]] auto is_unread(ez::rt_t) const -> bool   { return ss_.is_unread(ez::rt); }
 	auto set_publish(ez::nort_t, T value) -> void          { ss_.set_publish(ez::nort, std::move(value)); }
 private:
 	ez::signalled_sync<T, auto_gc> ss_;
