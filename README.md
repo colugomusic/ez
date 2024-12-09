@@ -38,7 +38,7 @@ These `ez::ui`, `ez::audio`, `ez::gc` things shown above are basically just anno
 
 You can also use these annotations in your own code if you want:
 
-```c+++
+```c++
 // audio_t indicates that this function will be called from an audio thread.
 void foo(ez::audio_t) { ... }
 void bar1(ez::audio_t) {
