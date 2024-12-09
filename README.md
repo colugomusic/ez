@@ -41,12 +41,15 @@ You can also use these annotations in your own code if you want:
 ```c++
 // audio_t indicates that this function will be called from an audio thread.
 void foo(ez::audio_t) { ... }
+
 void bar1(ez::audio_t) {
   foo(ez::audio); // Call another audio-thread function from an audio thread.
 }
+
 void bar2(ez::audio_t c) {
   foo(c); // You could also just pass on the argument like this if you prefer.
 }
+
 void main() {
   foo(ez::main); // Won't compile
   foo(ez::audio); // Will compile, there's nothing stopping you from lying. These annotations aren't magic. They're just a convention which I find useful because it makes mistakes less likely and the code clearer IMO.
