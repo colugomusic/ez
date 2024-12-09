@@ -28,9 +28,11 @@ static constexpr auto safe = safe_t{};
 
 // Just some aliases.
 using audio_t = rt_t;
+using gc_t    = nort_t;
 using main_t  = nort_t;
 using ui_t    = nort_t;
 static constexpr auto audio = rt;
+static constexpr auto gc    = nort;
 static constexpr auto main  = nort;
 static constexpr auto ui    = nort;
 
@@ -161,7 +163,7 @@ struct sync {
 		published_t(safe_t) {}
 	};
 	sync()                                                             { publish(ez::nort); }
-	auto gc(ez::nort_t) -> void                                        { published_value_.garbage_collect(ez::nort); }
+	auto gc(ez::gc_t) -> void                                          { published_value_.garbage_collect(ez::gc); }
 	[[nodiscard]] auto is_unread(ez::safe_t) const -> bool             { return unread_value_.load(std::memory_order_acquire); }
 	[[nodiscard]] auto read(ez::nort_t) const -> T                     { auto lock = std::lock_guard{mutex_}; return working_value_; }
 	template <typename Fn> auto update(ez::nort_t, Fn fn) -> T         { auto lock = std::lock_guard{mutex_}; working_value_ = fn(std::move(working_value_)); return working_value_; }
@@ -255,7 +257,7 @@ private:
 template <typename T, size_t N, bool auto_gc = false>
 struct signalled_sync_array {
 	signalled_sync_array(const sync_signal& signal) : ss_{signal} {}
-	auto gc(ez::nort_t) -> void                            { ss_.gc(ez::nort); }
+	auto gc(ez::gc_t) -> void                              { ss_.gc(ez::gc); }
 	auto read_into(ez::rt_t, size_t slot) -> const T&      { assert (slot >= 0 && slot < N); return *(array_[slot] = ss_.read(ez::rt)); }
 	[[nodiscard]] auto is_unread(ez::nort_t) const -> bool { return ss_.is_unread(ez::nort); }
 	[[nodiscard]] auto is_unread(ez::rt_t) const -> bool   { return ss_.is_unread(ez::rt); }
