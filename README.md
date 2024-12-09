@@ -56,7 +56,10 @@ void main() {
   // Won't compile.
   foo(ez::main);
 
-  // Will compile, there's nothing stopping you from lying. These annotations aren't magic. They're just a convention which I find useful because it makes mistakes less likely and the code clearer IMO.
+  // Will compile. There's nothing stopping you from lying.
+  // These annotations aren't magic. They're just a convention which
+  // I find useful because it makes mistakes less likely and the code
+  // clearer IMO.
   foo(ez::audio); 
 }
 ```
