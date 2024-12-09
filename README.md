@@ -43,16 +43,21 @@ You can also use these annotations in your own code if you want:
 void foo(ez::audio_t) { ... }
 
 void bar1(ez::audio_t) {
-  foo(ez::audio); // Call another audio-thread function from an audio thread.
+  // Call another audio-thread function from an audio thread.
+  foo(ez::audio);
 }
 
 void bar2(ez::audio_t c) {
-  foo(c); // You could also just pass on the argument like this if you prefer.
+  // You could also just pass on the argument like this if you prefer.
+  foo(c);
 }
 
 void main() {
-  foo(ez::main); // Won't compile
-  foo(ez::audio); // Will compile, there's nothing stopping you from lying. These annotations aren't magic. They're just a convention which I find useful because it makes mistakes less likely and the code clearer IMO.
+  // Won't compile.
+  foo(ez::main);
+
+  // Will compile, there's nothing stopping you from lying. These annotations aren't magic. They're just a convention which I find useful because it makes mistakes less likely and the code clearer IMO.
+  foo(ez::audio); 
 }
 ```
 
@@ -62,10 +67,10 @@ If you're doing this then you could consider a function with no annotation to be
 void foo(ez::safe_t) { ... }
 
 void audio_callback() {
-  foo(ez::audio); // Compiles
+  foo(ez::audio);
 }
 
 void ui_thread() {
-  foo(ez::ui); // Compiles
+  foo(ez::ui);
 }
 ```
