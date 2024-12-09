@@ -22,12 +22,6 @@ struct safe_t {
 	safe_t(rt_t){}
 };
 
-// Not for client use.
-struct published_t {
-	published_t(rt_t) {}
-	published_t(safe_t) {}
-};
-
 static constexpr auto nort = nort_t{};
 static constexpr auto rt   = rt_t{};
 static constexpr auto safe = safe_t{};
@@ -162,6 +156,10 @@ private:
 // realtime readers. Calling 'is_unread' assumes only one realtime reader.
 template <typename T, bool auto_gc = false>
 struct sync {
+	struct published_t {
+		published_t(rt_t) {}
+		published_t(safe_t) {}
+	};
 	sync()                                                             { publish(ez::nort); }
 	auto gc(ez::nort_t) -> void                                        { published_value_.garbage_collect(ez::nort); }
 	[[nodiscard]] auto is_unread(ez::safe_t) const -> bool             { return unread_value_.load(std::memory_order_acquire); }
@@ -174,7 +172,7 @@ struct sync {
 		published_value_.set(ez::nort, working_value_);
 		unread_value_.store(true, std::memory_order_release);
 	}
-	[[nodiscard]] auto read(ez::published_t) -> immutable<T> {
+	[[nodiscard]] auto read(published_t) -> immutable<T> {
 		unread_value_.store(false, std::memory_order_release);
 		return published_value_.read(ez::safe);
 	}
