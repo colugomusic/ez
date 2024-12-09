@@ -34,9 +34,13 @@ void garbage_collection_thread() {
 For a fairly extensive usage example you could look at [this project](https://github.com/search?q=repo%3Acolugomusic%2Fscuff+ez%3A%3A&type=code).
 
 ## Function annotations
-These `ez::ui`, `ez::audio`, `ez::gc` things shown above are basically just annotations which have no runtime cost (the compiler will optimize them away.) They are there just to make it more difficult to accidentally call a realtime-unsafe API from a realtime thread. Most of these are simply aliases for `ez::rt` or `ez::nort`. Just [look at the header](include/ez.hpp) to see what's going on. It's really simple.
+These `ez::ui`, `ez::audio`, `ez::gc` things shown above are basically just annotations which have no runtime cost (the compiler will optimize them away.) This is a coding convention that I have developed which I find useful. There is nothing magic about it. I just find that being forced to declare at a function call-site which thread you're in makes things clearer and less error-prone. It makes it more difficult to accidentally call a realtime-unsafe API from a realtime thread. Most of these annotations are simply aliases for `ez::rt` or `ez::nort`.
 
-You can also use these annotations in your own code if you want:
+- `rt`: indicates that we are in a realtime thread. Aliases: `audio`
+- `nort`: indicates that we are in a non-realtime thread. Aliases: `main`, `ui`, `gc`
+- `safe` indicates that the function can be safely called from any thread.
+
+You can use these annotations in your own code if you want:
 
 ```c++
 // audio_t indicates that this function will be called from an audio thread.
@@ -53,18 +57,22 @@ void bar2(ez::audio_t c) {
 }
 
 void main() {
-  // Won't compile.
+  // Won't compile, because foo expects to be called from an audio
+  // thread.
   foo(ez::main);
 
   // Will compile. There's nothing stopping you from lying.
   // These annotations aren't magic. They're just a convention which
   // I find useful because it makes mistakes less likely and the code
   // clearer IMO.
+  // Seeing this word 'audio' here should jump out at you as a mistake
+  // because this clearly isn't the audio thread so we must be doing
+  // something wrong.
   foo(ez::audio); 
 }
 ```
 
-If you're doing this then you could consider a function with no annotation to be implicitly thread-safe and realtime-safe. You can also explicitly annotate a function as thread-safe and realtime-safe using `ez::safe_t` which can be constructed from `ez::rt` or `ez::nort`:
+If you're doing this in your code then you could consider a function with no annotation to be implicitly thread-safe and realtime-safe. You can also explicitly annotate a function as thread-safe and realtime-safe using `ez::safe_t`, which is a bit special in that it can be implicitly constructed from either `ez::rt` or `ez::nort`:
 
 ```c++
 void foo(ez::safe_t) { ... }
