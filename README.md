@@ -37,7 +37,7 @@ void garbage_collection_thread() {
 For a fairly extensive usage example you could look at [this project](https://github.com/search?q=repo%3Acolugomusic%2Fscuff+ez%3A%3A&type=code).
 
 ## Function annotations
-These `ez::ui`, `ez::audio`, `ez::gc` things shown above are basically just annotations which have no runtime cost (the compiler will optimize them away.) This is a coding convention that I have developed which I find useful. There is nothing magic about it. I just find that being forced to declare at a function call-site which thread you're in makes things clearer and less error-prone. It makes it more difficult to accidentally call a realtime-unsafe API from a realtime thread. Most of these annotations are simply aliases for `ez::rt` or `ez::nort`.
+These `ez::ui`, `ez::audio`, `ez::gc` things shown above are basically just annotations which have no runtime cost (the compiler will optimize them away.) This is a coding convention that I have developed which I find useful. There is nothing magic about it. I just find that being forced to declare which thread you're in at a function call-site tends to make things much clearer and less error-prone, and it makes it more difficult to accidentally call a realtime-unsafe API from a realtime thread. Most of these annotations are simply aliases for `ez::rt` or `ez::nort`.
 
 - `rt`: indicates that we are in a realtime thread. Aliases: `audio`
 - `nort`: indicates that we are in a non-realtime thread. Aliases: `main`, `ui`, `gc`
