@@ -14,6 +14,8 @@ struct Value { ... };
 ez::sync<Value> value_;
 
 void ui_thread() {
+  // 'update' means 'update the working value'. 'publish' means 'make
+  // the working value visible to realtime readers'.
   value_.update_publish(ez::ui, [](Value&& v) {
     // Update v
     return v;
