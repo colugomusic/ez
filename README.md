@@ -9,24 +9,27 @@ There is more documentation [in the header](include/ez.hpp).
 Here is a very basic example:
 
 ```c++
-struct Value {
-   ...
-};
+struct Value { ... };
+
 ez::sync<Value> value_;
+
 void ui_thread() {
   value_.update_publish(ez::ui, [](Value&& v) {
     // Update v
     return v;
   });
 }
+
 void realtime_safe_audio_thread() {
   // Get the latest published version of the value. This is lock-free.
   auto v = value_.read(ez::audio);
   // As long as we hold at least one reference to v,
   // this version of the value will not be reclaimed.
 }
+
 void garbage_collection_thread() {
-  // Reclaim unused versions of the value.
+  // Periodically call this to reclaim unused versions of the value.
+  // The memory is reused.
   value_.gc(ez::gc);
 }
 ```
