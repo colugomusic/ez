@@ -164,8 +164,6 @@ private:
 // An 'update' or 'set' operation changes the working value, but does not yet
 // commit the change to be visible to realtime readers.
 // A 'publish' operation makes the new value visible to realtime readers.
-// If you never call 'is_unread' then this class supports multiple simultaneous
-// realtime readers. Calling 'is_unread' assumes only one realtime reader.
 template <typename T, bool auto_gc = false>
 struct sync {
 	sync()                                                             { publish(ez::nort); }
