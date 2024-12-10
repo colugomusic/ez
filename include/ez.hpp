@@ -3,6 +3,7 @@
 #include <cassert>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
 
