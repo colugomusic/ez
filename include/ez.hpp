@@ -232,15 +232,22 @@ template <typename T, bool auto_gc = false>
 struct signalled_sync : sync<T, auto_gc> {
 	signalled_sync(const sync_signal& signal) : signal_{&signal} {}
 	auto read(ez::rt_t) -> immutable<T>& {
-		auto signal_value = signal_->get(ez::rt);
-		if (signal_value > local_signal_value_) {
-			local_signal_value_ = signal_value;
-			signalled_value_    = sync<T, auto_gc>::read(ez::rt);
+		if (unread_value_.load(std::memory_order_acquire)) {
+			auto signal_value = signal_->get(ez::rt);
+			if (signal_value > local_signal_value_) {
+				local_signal_value_ = signal_value;
+				signalled_value_    = sync<T, auto_gc>::read(ez::rt);
+				unread_value_.store(false, std::memory_order_release);
+			}
 		}
 		return signalled_value_;
 	}
 	auto publish(ez::nort_t) -> void {
 		sync<T, auto_gc>::publish(ez::nort);
+		unread_value_.store(true, std::memory_order_release);
+	}
+	auto set_publish(ez::nort_t, T value) -> void {
+		sync<T, auto_gc>::set_publish(ez::nort, std::move(value));
 		unread_value_.store(true, std::memory_order_release);
 	}
 	[[nodiscard]]
