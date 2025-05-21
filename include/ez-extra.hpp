@@ -12,58 +12,78 @@ private:
 	std::atomic_flag flag_;
 };
 
-// Ball thrown between two players.
-// Can be used to coordinate access to some memory between two threads.
-// Only the player currently holding the ball is allowed to access the
-// memory.
+struct catcher      { int v = -1; };
+struct player       { int v = -1; };
+struct thrower      { int v = -1; };
+struct player_count { int v = -1; };
+
+template <player_count PlayerCount, player Player> struct beach_ball_player;
+
+// Ball thrown between two or more players.
+// Can be used to coordinate access to some resource
+// between two or more threads.
+// Only the player currently holding the ball is
+// allowed to access the resource..
 // Each player must poll by calling catch_ball(), to check
-// if the ball has been thrown back to them yet.
+// if the ball has been thrown to them yet.
 // Calling throw_ball() when you don't have the ball is invalid.
+template <player_count PlayerCount>
 struct beach_ball {
-	beach_ball(int first_catcher) {
-		assert(first_catcher == 0 || first_catcher == 1);
-		thrown_to_.store(first_catcher, std::memory_order_relaxed);
+	static_assert(PlayerCount.v > 1);
+	template <int Player> using player = beach_ball_player<PlayerCount, ez::player{Player}>;
+	beach_ball(catcher first_catcher) {
+		assert(first_catcher.v >= 0 && first_catcher.v < PlayerCount.v);
+		// Ball starts in the air, thrown to the first catcher
+		thrown_to_.store(first_catcher.v, std::memory_order_relaxed);
+	}
+	template <int Player>
+	auto make_player() -> player<Player> {
+		return player<Player>{this};
 	}
 	// We're not allowed to call this unless we have the ball,
 	// i.e. catch_ball() must have returned true since our
 	// last call to throw_ball().
-	template <int player>
-	auto throw_ball() -> void {
-		static_assert(player == 0 || player == 1);
-		thrown_to_.store(1 - player, std::memory_order_release);
+	template <thrower Thrower, catcher Catcher>
+	auto throw_to() -> void {
+		static_assert(Thrower.v >= 0 && Thrower.v < PlayerCount.v);
+		static_assert(Catcher.v >= 0 && Catcher.v < PlayerCount.v);
+		static_assert(Thrower.v != Catcher.v, "Can't throw ball to yourself!");
+		thrown_to_.store(Catcher.v, std::memory_order_release);
 	}
 	// Returns true if the ball is caught.
 	// Returns false if the ball has not been thrown to this player.
-	// May also return false spuriously because that's how
-	// compare_exchange_weak() works, but will always return true
-	// eventually if the ball has been thrown to us.
-	template <int player>
+	template <catcher Catcher>
 	auto catch_ball() -> bool {
-		static_assert(player == 0 || player == 1); 
-		int tmp = player;
-		return thrown_to_.compare_exchange_weak(tmp, NO_PLAYER, std::memory_order_acquire, std::memory_order_relaxed);
+		static_assert(Catcher.v >= 0 && Catcher.v < PlayerCount.v);
+		int tmp = Catcher.v;
+		return thrown_to_.compare_exchange_strong(tmp, catcher{}.v, std::memory_order_acquire, std::memory_order_relaxed);
 	}
 private:
-	static inline constexpr int NO_PLAYER{ -1 };
 	std::atomic<int> thrown_to_;
 };
 
-template <int player>
+template <player_count PlayerCount, player Player>
 struct beach_ball_player {
-	beach_ball* const ball;
-	beach_ball_player(beach_ball* ball_)
+	static_assert(Player.v >= 0 && Player.v < PlayerCount.v);
+	beach_ball<PlayerCount>* const ball;
+	beach_ball_player(beach_ball<PlayerCount>* ball_)
 		: ball{ ball_ }
 	{
-		static_assert(player == 0 || player == 1);
 	}
-	auto throw_ball() -> void {
-		assert(have_ball_);
+	template <catcher Catcher>
+	auto throw_to() -> void {
+		if (!have_ball_) {
+			throw std::logic_error{"Tried to throw ball but we don't have it!"};
+		}
+		static constexpr auto Thrower = thrower{Player.v};
 		have_ball_ = false;
-		ball->throw_ball<player>();
+		ball->throw_to<Thrower, Catcher>();
 	}
 	auto catch_ball() -> bool {
-		assert(!have_ball_);
-		if (ball->catch_ball<player>()) {
+		if (have_ball_) {
+			throw std::logic_error{"Tried to catch ball but we already have it!"};
+		}
+		if (ball->catch_ball<catcher{Player.v}>()) {
 			have_ball_ = true;
 		}
 		return have_ball_;
@@ -76,6 +96,11 @@ struct beach_ball_player {
 			if (!catch_ball()) return false;
 		}
 		return true;
+	}
+	auto with_ball(auto&& fn) -> void {
+		if (ensure()) {
+			fn();
+		}
 	}
 private:
 	bool have_ball_{};
