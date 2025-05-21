@@ -97,9 +97,11 @@ struct beach_ball_player {
 		}
 		return true;
 	}
+	template <catcher IfSuccessThenThrowTo>
 	auto with_ball(auto&& fn) -> void {
 		if (ensure()) {
 			fn();
+			throw_to<IfSuccessThenThrowTo>();
 		}
 	}
 private:
