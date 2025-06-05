@@ -77,13 +77,13 @@ struct beach_ball_player {
 		}
 		static constexpr auto Thrower = thrower{Player.v};
 		have_ball_ = false;
-		ball->throw_to<Thrower, Catcher>();
+		ball->template throw_to<Thrower, Catcher>();
 	}
 	auto catch_ball() -> bool {
 		if (have_ball_) {
 			throw std::logic_error{"Tried to catch ball but we already have it!"};
 		}
-		if (ball->catch_ball<catcher{Player.v}>()) {
+		if (ball->template catch_ball<catcher{Player.v}>()) {
 			have_ball_ = true;
 		}
 		return have_ball_;
