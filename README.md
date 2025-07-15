@@ -42,6 +42,8 @@ For a fairly extensive usage example you could look at [this project](https://gi
 
 ## Let's go to the beach
 
+<img width="512" height="512" align="right" alt="beach-ball-512" src="https://github.com/user-attachments/assets/724a573d-90cb-4325-adf9-e3f40e1bc632" />
+
 I developed a method of realtime-safe sychronization which I call Beach Ball Synchronization that can be used in any situation where two or more threads take it in turns to work with some critical memory region.
 
 By "take it in turns" I mean that, once a thread finishes working with the shared resource, it cannot do so again until some other thread says, "Okay, it's your turn again." Every time a thread finishes doing some work, it must pick another thread whose turn it is to work with the resource next.
