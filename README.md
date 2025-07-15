@@ -44,7 +44,9 @@ For a fairly extensive usage example you could look at [this project](https://gi
 
 I developed a method of realtime-safe sychronization which I call Beach Ball Synchronization that can be used in any situation where two or more threads take it in turns to work with some critical memory region.
 
-By "take it in turns" I mean that, once a thread finishes working with the shared resource, it cannot do so again until some other thread says, "Okay, it's your turn again." Every time a thread finishes doing some work, it must pick another thread whose turn it is to work with the resource next. This turns out to be a very generic and versatile technique for use in situations where you know at compile-time exactly how many threads are involved in a particular algorithm, and you know that those threads will all be constantly running. (Technically you could write a dynamic version which works with a runtime-known number of threads but that makes my head spin a bit and I don't personally need it so I'll leave it as an exercise for the reader.)
+By "take it in turns" I mean that, once a thread finishes working with the shared resource, it cannot do so again until some other thread says, "Okay, it's your turn again." Every time a thread finishes doing some work, it must pick another thread whose turn it is to work with the resource next.
+
+This turns out to be a very generic and versatile technique for use in situations where you know at compile-time exactly how many threads are involved in a particular algorithm, and you know that those threads will all be constantly running. (Technically you could write a dynamic version which works with a runtime-known number of threads but that makes my head spin a bit and I don't personally need it so I'll leave it as an exercise for the reader.)
 
 This is currently implemented in [ez-extra.hpp](include/ez-extra.hpp).
 
