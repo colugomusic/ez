@@ -60,7 +60,11 @@ Technically you could write a dynamic version which works with a runtime-known n
 
 If it helps then you can imagine the threads as people on a beach throwing a beach ball to each other. Only the player currently holding the beach ball is allowed to work on the shared resource. Once they are done working on the resource, they must throw the ball to another player. A player can only catch the ball if it has been specifically thrown to them by another player.
 
-Note that when using this technique, there is zero danger of that classic problem where a thread is repeatedly attempting to acquire access to a shared resource, and it keeps failing because other threads are jumping in and acquiring access before it gets a chance to. In this system, each thread is guaranteed to get its turn with the resource at a fair and regular interval, assuming all threads are, at the very least, fulfilling their contract of catching the ball and throwing it on.
+Note that when using this technique, there is zero danger of that classic problem where a thread is repeatedly attempting to acquire access to a shared resource, and it keeps failing because other threads are jumping in and acquiring access before it gets a chance to. In this system, each thread is guaranteed to get its turn with the resource at a fair and regular interval, assuming all threads are, at the very least, fulfilling their contract of catching the ball and throwing it on.**
+
+The beach ball is not intended for use as a spin-locking mechanism. If a thread attempts to catch the ball and fails then it should go do some other useful work instead (e.g. an audio thread should complete the rest of its round-trip and try again on the next iteration of the audio callback. A UI thread should try again next UI frame.)
+
+** Depending on the situation it may not even be necessary to regularly attempt to catch and throw the ball (for example if thread A always depends on work done by thread B, then thread B may choose not to even bother attempting to catch the ball until it has actual work to do. The beach ball will remain in its "thrown-to-thread-B" state until it is caught.
 
 ### Example
 
