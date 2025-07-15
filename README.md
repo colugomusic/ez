@@ -2,7 +2,9 @@
 
 Realtime-safe thread synchronization. The motivation for this library is audio application programming but it may be useful in other realtime contexts.
 
-## Usage
+## ez::sync
+
+This can be used in any situation where you have one or more non-realtime writers and one or more realtime readers.
 
 There is more documentation [in the header](include/ez.hpp).
 
@@ -23,7 +25,7 @@ void ui_thread() {
 }
 
 void realtime_safe_audio_thread() {
-  // Get the latest published version of the value. This is lock-free.
+  // Get the latest published version of the value. This is realtime-safe.
   auto v = value_.read(ez::audio);
   // As long as we hold at least one reference to v,
   // this version of the value will not be reclaimed.
@@ -37,6 +39,14 @@ void garbage_collection_thread() {
 ```
 
 For a fairly extensive usage example you could look at [this project](https://github.com/colugomusic/scuff).
+
+## Let's go to the beach
+
+I developed a method of realtime-safe sychronization that can be used in any situation where two or more threads take it in turns to work with some critical memory region.
+
+I use this for updating sample data mipmaps (used for rendering waveform visuals) in realtime in [this library](https://github.com/colugomusic/adrian).
+
+This is currently defined in [ez-extra.hpp](include/ez-extra.hpp).
 
 ## Function annotations
 These `ez::ui`, `ez::audio`, `ez::gc` things shown above are basically just annotations which have no runtime cost (the compiler will optimize them away.) This is a coding convention that I have developed which I find useful. There is nothing magic about it. I just find that being forced to declare which thread you're in at a function call-site tends to make things much clearer and less error-prone, and it makes it more difficult to accidentally call a realtime-unsafe API from a realtime thread. Most of these annotations are simply aliases for `ez::rt` or `ez::nort`.
