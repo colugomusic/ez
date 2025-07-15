@@ -138,17 +138,3 @@ void main() {
   foo(ez::audio); 
 }
 ```
-
-If you're doing this in your code then you could consider a function with no annotation to be implicitly thread-safe and realtime-safe. You can also explicitly annotate a function as thread-safe and realtime-safe using `ez::safe_t`, which is a bit special in that it can be implicitly constructed from either `ez::rt` or `ez::nort`:
-
-```c++
-void foo(ez::safe_t) { ... }
-
-void audio_callback() {
-  foo(ez::audio);
-}
-
-void ui_thread() {
-  foo(ez::ui);
-}
-```
