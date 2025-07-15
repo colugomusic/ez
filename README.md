@@ -8,7 +8,7 @@ This can be used in any situation where you have one or more non-realtime writer
 
 There is more documentation [in the header](include/ez.hpp).
 
-Here is a very basic example:
+### Example
 
 ```c++
 struct Value { ... };
@@ -47,6 +47,49 @@ I developed a method of realtime-safe sychronization that can be used in any sit
 I use this for updating sample data mipmaps (used for rendering waveform visuals) in realtime in [this library](https://github.com/colugomusic/adrian).
 
 This is currently defined in [ez-extra.hpp](include/ez-extra.hpp).
+
+### Example
+
+```c++
+static constexpr auto MIPMAP_AUDIO_CATCHER = ez::catcher{0};
+static constexpr auto MIPMAP_UI_CATCHER    = ez::catcher{1};
+using mipmap_beach_ball   = ez::beach_ball<ez::player_count{2}>;
+using mipmap_player_audio = mipmap_beach_ball::player<MIPMAP_AUDIO_CATCHER.v>;
+using mipmap_player_ui    = mipmap_beach_ball::player<MIPMAP_UI_CATCHER.v>;
+
+struct mipmap_beach {
+	mipmap_beach_ball ball    = {MIPMAP_AUDIO_CATCHER};
+	mipmap_player_audio audio = ball.make_player<MIPMAP_AUDIO_CATCHER.v>();
+	mipmap_player_ui ui       = ball.make_player<MIPMAP_UI_CATCHER.v>();
+};
+
+mipmap_beach beach;
+
+...
+
+// in the UI thread
+auto update_mipmaps(ez::ui_t, ...) -> void {
+  // Try to catch the ball. If this fails then it simply means that
+  // the ball has not been thrown to the UI thread and so it's not
+  // our turn yet to work on the critical region.
+	beach.ui.with_ball<MIPMAP_AUDIO_CATCHER>([]{
+    // Safely do work with the critical region.
+    // When we are done, the ball will be thrown to the audio thread
+    // (as specified by the with_ball<> template argument.)
+	});
+}
+
+// in the audio thread
+auto update_mipmaps(ez::audio_t, ...) -> void {
+  // Try to catch the ball. If this fails then it simply means that
+  // the ball has not been thrown to the audio thread and so it's not
+  // our turn yet to work on the critical region.
+	beach.audio.with_ball<MIPMAP_UI_CATCHER>([]{
+    // When we are done, the ball will be thrown to the UI thread
+    // (as specified by the with_ball<> template argument.)
+	});
+}
+```
 
 ## Function annotations
 These `ez::ui`, `ez::audio`, `ez::gc` things shown above are basically just annotations which have no runtime cost (the compiler will optimize them away.) This is a coding convention that I have developed which I find useful. There is nothing magic about it. I just find that being forced to declare which thread you're in at a function call-site tends to make things much clearer and less error-prone, and it makes it more difficult to accidentally call a realtime-unsafe API from a realtime thread. Most of these annotations are simply aliases for `ez::rt` or `ez::nort`.
