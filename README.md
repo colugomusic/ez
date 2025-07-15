@@ -72,7 +72,7 @@ mipmap_beach beach;
 ...
 
 // in the UI thread
-auto update_mipmaps(ez::ui_t, ...) -> void {
+void update_mipmaps(ez::ui_t, ...) {
 	// Try to catch the ball. If this fails then it simply means that
 	// the ball has not been thrown to the UI thread and so it's not
 	// our turn yet to work with the shared buffer.
@@ -84,7 +84,7 @@ auto update_mipmaps(ez::ui_t, ...) -> void {
 }
 
 // in the audio thread
-auto update_mipmaps(ez::audio_t, ...) -> void {
+void update_mipmaps(ez::audio_t, ...) {
 	// Try to catch the ball. If this fails then it simply means that
 	// the ball has not been thrown to the audio thread and so it's not
 	// our turn yet to work with the shared buffer.
