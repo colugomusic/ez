@@ -2,7 +2,7 @@
 
 Realtime-safe thread synchronization. The motivation for this library is audio application programming but it may be useful in other realtime contexts.
 
-## ez::sync
+## ez::sync<T>
 
 This can be used in any situation where you have one or more non-realtime writers and one or more realtime readers.
 
