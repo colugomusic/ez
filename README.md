@@ -46,11 +46,11 @@ I developed a method of realtime-safe sychronization which I call Beach Ball Syn
 
 By "take it in turns" I mean that, once a thread finishes working with the memory, it cannot do so again until some other thread says, "Okay, it's your turn again." Every time a thread finishes doing some work, it must pick another thread whose turn it is to work on the memory next.
 
+This is currently defined in [ez-extra.hpp](include/ez-extra.hpp).
+
 If it helps then you can imagine the threads as people on a beach throwing a beach ball to each other. Only the player currently holding the beach ball is allowed to work on the memory. Once they are done working on the memory, they must throw the ball to another player. A player can only catch the ball if it has been specifically thrown to them by another player.
 
-I use this for updating sample data mipmaps (used for rendering waveform visuals) in realtime in [this library](https://github.com/colugomusic/adrian).
-
-This is currently defined in [ez-extra.hpp](include/ez-extra.hpp).
+I use this for updating sample data mipmaps (used for rendering waveform visuals) in [this library](https://github.com/colugomusic/adrian). In this library the audio thread can write sample data to a buffer. The work of generating sample mipmap information is done in the UI thread. The audio thread only wants to do the bare minimum amount of work (copy the sample data to an intermediate buffer). If it can't do this because it's not currently holding the beach ball then it simply marks the dirty region of the buffer and tries again later (on the next iteration of the audio callback.) It is guaranteed that eventually the beach ball will be thrown back to the audio thread and it will have its chance to transfer the dirty region of the buffer into the critical memory region.
 
 ### Example
 
