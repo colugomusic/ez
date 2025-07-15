@@ -4,14 +4,6 @@
 
 namespace ez {
 
-struct trigger {
-	trigger()                 { flag_.clear(); flag_.test_and_set(std::memory_order_relaxed); }
-	auto operator()() -> void { flag_.clear(std::memory_order_relaxed); }
-	operator bool()           { return !(flag_.test_and_set(std::memory_order_relaxed)); }
-private:
-	std::atomic_flag flag_;
-};
-
 struct catcher      { int v = -1; };
 struct player       { int v = -1; };
 struct thrower      { int v = -1; };

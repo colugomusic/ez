@@ -50,7 +50,7 @@ By "take it in turns" I mean that, once a thread finishes working with the share
 
 This turns out to be a very generic and versatile technique for use in situations where you know at compile-time exactly how many threads are involved in a particular algorithm, and you know that those threads will all be constantly running. (Technically you could write a dynamic version which works with a runtime-known number of threads but that makes my head spin a bit and I don't personally need it so I'll leave it as an exercise for the reader.)
 
-This is currently implemented in [ez-extra.hpp](include/ez-extra.hpp).
+This is implemented in [ez-beach.hpp](include/ez-beach.hpp).
 
 If it helps then you can imagine the threads as people on a beach throwing a beach ball to each other. Only the player currently holding the beach ball is allowed to work on the shared resource. Once they are done working on the resource, they must throw the ball to another player. A player can only catch the ball if it has been specifically thrown to them by another player.
 
