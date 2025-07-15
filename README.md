@@ -16,25 +16,25 @@ struct Value { ... };
 ez::sync<Value> value_;
 
 void ui_thread() {
-  // 'update' means 'update the working value'. 'publish' means 'make
-  // the working value visible to realtime readers'.
-  value_.update_publish(ez::ui, [](Value&& v) {
-    // Update v
-    return v;
-  });
+	// 'update' means 'update the working value'. 'publish' means 'make
+	// the working value visible to realtime readers'.
+	value_.update_publish(ez::ui, [](Value&& v) {
+		// Update v
+		return v;
+	});
 }
 
 void realtime_safe_audio_thread() {
-  // Get the latest published version of the value. This is realtime-safe.
-  auto v = value_.read(ez::audio);
-  // As long as we hold at least one reference to v,
-  // this version of the value will not be reclaimed.
+	// Get the latest published version of the value. This is realtime-safe.
+	auto v = value_.read(ez::audio);
+	// As long as we hold at least one reference to v,
+	// this version of the value will not be reclaimed.
 }
 
 void garbage_collection_thread() {
-  // Periodically call this to reclaim unused versions of the value.
-  // The memory is reused.
-  value_.gc(ez::gc);
+	// Periodically call this to reclaim unused versions of the value.
+	// The memory is reused.
+	value_.gc(ez::gc);
 }
 ```
 
@@ -69,24 +69,25 @@ mipmap_beach beach;
 
 // in the UI thread
 auto update_mipmaps(ez::ui_t, ...) -> void {
-  // Try to catch the ball. If this fails then it simply means that
-  // the ball has not been thrown to the UI thread and so it's not
-  // our turn yet to work on the critical region.
+	// Try to catch the ball. If this fails then it simply means that
+	// the ball has not been thrown to the UI thread and so it's not
+	// our turn yet to work on the critical region.
 	beach.ui.with_ball<MIPMAP_AUDIO_CATCHER>([]{
-    // Safely do work with the critical region.
-    // When we are done, the ball will be thrown to the audio thread
-    // (as specified by the with_ball<> template argument.)
+		// Safely do work with the critical region.
+		// When we are done, the ball will be thrown to the audio thread
+		// (as specified by the with_ball<> template argument.)
 	});
 }
 
 // in the audio thread
 auto update_mipmaps(ez::audio_t, ...) -> void {
-  // Try to catch the ball. If this fails then it simply means that
-  // the ball has not been thrown to the audio thread and so it's not
-  // our turn yet to work on the critical region.
+	// Try to catch the ball. If this fails then it simply means that
+	// the ball has not been thrown to the audio thread and so it's not
+	// our turn yet to work on the critical region.
 	beach.audio.with_ball<MIPMAP_UI_CATCHER>([]{
-    // When we are done, the ball will be thrown to the UI thread
-    // (as specified by the with_ball<> template argument.)
+		// Safely do work with the critical region.
+		// When we are done, the ball will be thrown to the UI thread
+		// (as specified by the with_ball<> template argument.)
 	});
 }
 ```
