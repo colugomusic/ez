@@ -101,7 +101,7 @@ void update_mipmaps(ez::audio_t, ...) {
 ```
 
 ## Function annotations
-These `ez::ui`, `ez::audio`, `ez::gc` things shown above are basically just annotations which have no runtime cost (the compiler will optimize them away.) This is a coding convention that I have developed which I find useful. There is nothing magic about it. I just find that being forced to declare which thread you're in at a function call-site tends to make things much clearer and less error-prone, and it makes it more difficult to accidentally call a realtime-unsafe API from a realtime thread. Most of these annotations are simply aliases for `ez::rt` or `ez::nort`.
+These `ez::ui`, `ez::audio`, `ez::gc` things used above are basically just annotations which have no runtime cost (the compiler will optimize them away.) This is a coding convention that I have developed which I find useful. There is nothing magic about it. I just find that being forced to declare which thread you're in at a function call-site tends to make things much clearer and less error-prone, and it makes it more difficult to accidentally call a realtime-unsafe API from a realtime thread. Most of these annotations are simply aliases for `ez::rt` or `ez::nort`.
 
 - `rt`: indicates that we are in a realtime thread. Aliases: `audio`
 - `nort`: indicates that we are in a non-realtime thread. Aliases: `main`, `ui`, `gc`
