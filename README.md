@@ -42,7 +42,11 @@ For a fairly extensive usage example you could look at [this project](https://gi
 
 ## Let's go to the beach
 
-I developed a method of realtime-safe sychronization that can be used in any situation where two or more threads take it in turns to work with some critical memory region.
+I developed a method of realtime-safe sychronization which I call Beach Ball Synchronization that can be used in any situation where two or more threads take it in turns to work with some critical memory region.
+
+By "take it in turns" I mean that, one a thread finishes working with the memory, it cannot do so again until some other thread says, "Okay, it's your turn to work again." Every time a thread finishes doing some work, it must pick another thread whose turn it is to work on the memory next.
+
+If it helps then you can imagine the threads as people on a beach throwing a beach ball to each other. Only the player currently holding the beach ball is allowed to work on the memory. Once they are done working on the memory, they must throw the ball to another player. A player can only catch the ball if it has been specifically thrown to them by another player.
 
 I use this for updating sample data mipmaps (used for rendering waveform visuals) in realtime in [this library](https://github.com/colugomusic/adrian).
 
