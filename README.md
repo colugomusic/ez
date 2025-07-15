@@ -75,9 +75,9 @@ mipmap_beach beach;
 auto update_mipmaps(ez::ui_t, ...) -> void {
 	// Try to catch the ball. If this fails then it simply means that
 	// the ball has not been thrown to the UI thread and so it's not
-	// our turn yet to work on the critical region.
+	// our turn yet to work with the shared buffer.
 	beach.ui.with_ball<MIPMAP_AUDIO_CATCHER>([]{
-		// Safely do work with the critical region.
+		// Safely do work with the shared buffer.
 		// When we are done, the ball will be thrown to the audio thread
 		// (as specified by the with_ball<> template argument.)
 	});
@@ -87,9 +87,9 @@ auto update_mipmaps(ez::ui_t, ...) -> void {
 auto update_mipmaps(ez::audio_t, ...) -> void {
 	// Try to catch the ball. If this fails then it simply means that
 	// the ball has not been thrown to the audio thread and so it's not
-	// our turn yet to work on the critical region.
+	// our turn yet to work with the shared buffer.
 	beach.audio.with_ball<MIPMAP_UI_CATCHER>([]{
-		// Safely do work with the critical region.
+		// Safely do work with the shared buffer.
 		// When we are done, the ball will be thrown to the UI thread
 		// (as specified by the with_ball<> template argument.)
 	});
