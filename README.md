@@ -46,21 +46,35 @@ For a fairly extensive usage example you could look at [this project](https://gi
 
 I developed a method of realtime-safe sychronization which I call Beach Ball Synchronization that can be used in any situation where two or more threads take it in turns to work with some critical memory region.
 
-By "take it in turns" I mean that, once a thread finishes working with the shared resource, it cannot do so again until some other thread says, "Okay, it's your turn again." Every time a thread finishes doing some work, it must pick another thread whose turn it is to work with the resource next.
-
-This turns out to be a very generic and versatile technique for use in situations where you know at compile-time exactly how many threads are involved in a particular algorithm, and you know that those threads will all be constantly running. (Technically you could write a dynamic version which works with a runtime-known number of threads but that makes my head spin a bit and I don't personally need it so I'll leave it as an exercise for the reader.)
+By "take it in turns" I mean that, once a thread finishes working with the shared resource, it cannot do so again until some other thread says, "Okay, it's your turn again." Every time a thread finishes doing some work, it must declare another thread whose turn it is to work with the resource next.
 
 This is implemented in [ez-beach.hpp](include/ez-beach.hpp).
 
+This turns out to be a very versatile and surprisingly simple technique for use in situations where:
+
+- You know at compile-time exactly how many threads are involved in a particular algorithm.
+- You know that those threads will all be constantly running.
+- Threads are able to defer their work until their turn if necessary (I haven't really found a situation yet where this isn't the case.)
+
+Technically you could write a dynamic version which works with a runtime-known number of threads but that makes my head spin a bit and I don't personally need it so I'll leave it as an exercise for the reader.
+
 If it helps then you can imagine the threads as people on a beach throwing a beach ball to each other. Only the player currently holding the beach ball is allowed to work on the shared resource. Once they are done working on the resource, they must throw the ball to another player. A player can only catch the ball if it has been specifically thrown to them by another player.
 
-Note that when using this technique, there is zero danger of that classic problem where a thread is repeatedly attempting to acquire access to a shared resource, and it keeps failing because other threads are jumping in and acquiring access before it gets a chance to. In this system, each thread is guaranteed to get its turn with the resource at a fair and regular interval, assuming all threads are, at the very least, fullfilling their contract of catching the ball and throwing it on.
+Note that when using this technique, there is zero danger of that classic problem where a thread is repeatedly attempting to acquire access to a shared resource, and it keeps failing because other threads are jumping in and acquiring access before it gets a chance to. In this system, each thread is guaranteed to get its turn with the resource at a fair and regular interval, assuming all threads are, at the very least, fulfilling their contract of catching the ball and throwing it on.
 
-I use this for updating sample data mipmaps (used for rendering waveform visuals) in [this library](https://github.com/colugomusic/adrian). In this library the audio thread can write sample data to a buffer. The work of generating sample mipmap information is done in the UI thread. The audio thread only wants to do the bare minimum amount of work (copy the sample data to an intermediate buffer). If it can't do this because it's not currently holding the beach ball then it simply marks the dirty region of the buffer and tries again later (on the next iteration of the audio callback.) It is guaranteed that eventually the beach ball will be thrown back to the audio thread and it will have its chance to transfer the dirty region of the buffer into the critical memory region.
+Depending on the situation, it may not even be necessary to regularly attempt to catch and throw the ball (for example if thread A always depends on work done by thread B, then thread B may choose not to even bother attempting to catch the ball until it has actual work to do. The beach ball will remain in its "thrown-to-thread-B" state until it is caught.
+
+The beach ball is not intended for use as a spin-locking mechanism. If a thread attempts to catch the ball and fails then it should go do some other useful work instead (e.g. an audio thread should probably complete the rest of its round-trip and try again on the next iteration of the audio callback. A UI thread should try again next UI frame.)
 
 ### Example
 
+I use this technique for updating sample data mipmaps (used for rendering waveform visuals) in [this library](https://github.com/colugomusic/adrian). In this library the audio thread can write sample data to a buffer. The work of generating sample mipmap information is done in the UI thread. The audio thread only wants to do the bare minimum amount of work (copy the raw sample data to an intermediate buffer). If it can't do this because it's not currently holding the beach ball then it simply marks the dirty region of the buffer and tries again later (on the next iteration of the audio callback.) It is guaranteed that eventually the beach ball will be thrown back to the audio thread and it will have its chance to transfer the dirty region of the buffer into the critical memory region.
+
 ```c++
+#include <ez-beach.hpp>
+
+...
+
 static constexpr auto MIPMAP_AUDIO_CATCHER = ez::catcher{0};
 static constexpr auto MIPMAP_UI_CATCHER    = ez::catcher{1};
 using mipmap_beach_ball   = ez::beach_ball<ez::player_count{2}>;
